@@ -187,7 +187,9 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CBreakpointListDlg.h" />
     <ClInclude Include="CEditRegDlg.h" />
+    <ClInclude Include="CProcessListDlg.h" />
     <ClInclude Include="DebuggerGUI.h" />
     <ClInclude Include="DebuggerGUIDlg.h" />
     <ClInclude Include="framework.h" />
@@ -196,7 +198,9 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CBreakpointListDlg.cpp" />
     <ClCompile Include="CEditRegDlg.cpp" />
+    <ClCompile Include="CProcessListDlg.cpp" />
     <ClCompile Include="DebuggerGUI.cpp" />
     <ClCompile Include="DebuggerGUIDlg.cpp" />
     <ClCompile Include="pch.cpp">
@@ -211,6 +215,7 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\DebuggerGUI.ico" />
+    <Image Include="res\toolbar1.bmp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DebuggerEngine\DebuggerEngine.vcxproj">

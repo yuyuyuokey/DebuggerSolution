@@ -1,13 +1,11 @@
 #pragma once
-#pragma once
 #include <Windows.h>
 #include "CThreadManager.h"
 #include "CBreakpointManager.h"
 #include "CDisassembler.h"
 
-// 定义回调类型，向外部索取用户指令
 class CMyDebug;
-typedef void (*PromptCallback)(CMyDebug*);
+typedef void(__stdcall* PromptCallback)(int eventType, DWORD dwThreadId);
 
 class CMyDebug
 {
@@ -16,25 +14,22 @@ public:
     ~CMyDebug();
 
     int BeginDebug(LPCWSTR lpPath);
-    void SetPromptCallback(PromptCallback cb);
+    int AttachDebug(DWORD dwPID);
 
-    // 获取子模块和状态
+    void SetPromptCallback(PromptCallback cb);
     CBreakpointManager& GetBPMgr() { return m_BPMgr; }
     CDisassembler& GetDisasm() { return m_Disasm; }
     HANDLE GetProcessHandle() const { return m_hProcess; }
     DWORD GetCurrentThreadId() const { return m_DebugEvent.dwThreadId; }
 
-    // 核心执行控制 API
     void SetUserStepping(BOOL isStepping);
     int SetStep();
     int SetStepOver();
 
-    // 工具 API
-    int ShowRegisters();
-    void DumpMemory(DWORD dwAddr, int length);
-    void ShowStackTrace(int nMaxFrames = 20);
-
+    // 剔除了在重构剥离成窗格化后根本不再属于基核作用并引生报错和崩溃的老旧文本调试辅助。保留架构基础核心：
 private:
+    int EventLoop();
+
     int OnDebugEvent();
     int OnCreateThread();
     int OnCreateProcess();
@@ -44,8 +39,6 @@ private:
     int OnUnloadDll();
     int OnOutPutDebugString();
     int OnExecBreakPoint();
-
-    void PrintEFlags(DWORD eflags);
 
 private:
     BOOL m_bRunning;
