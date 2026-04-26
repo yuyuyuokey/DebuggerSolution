@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="DebuggerEngine/DebuggerEngine.vcxproj" Id="f73efdef-3650-4be9-9d4b-5cbb614b6218" />
+  <Project Path="DebuggerGUI/DebuggerGUI.vcxproj" />
+</Solution>
