@@ -4,7 +4,8 @@
 #include "afxdialogex.h"
 #include "DebuggerAPI.h"
 
-CBreakpointListDlg::CBreakpointListDlg(CWnd* pParent) : CDialogEx(IDD_DLG_EDIT_REG, pParent)
+CBreakpointListDlg::CBreakpointListDlg(CWnd* pParent)
+    : CDialogEx(IDD_DLG_EDIT_REG, pParent)
 {
 }
 
@@ -22,7 +23,12 @@ BOOL CBreakpointListDlg::OnInitDialog()
     CDialogEx::OnInitDialog();
 
     SetWindowText(_T("BreakPoints Global Center [Readonly-Panel]"));
-    GetDlgItem(IDOK)->SetWindowText(_T("Wipe ALL"));
+
+    CWnd* pBtnOk = GetDlgItem(IDOK);
+    if (pBtnOk)
+    {
+        pBtnOk->SetWindowText(_T("Wipe ALL"));
+    }
 
     RefreshBreakpoints();
 
@@ -38,15 +44,18 @@ void CBreakpointListDlg::RefreshBreakpoints()
     {
         strOutput = _T("  -> Null ... [Nothing In Trap Array!] \r\n");
     }
-
-    for (int i = 0; i < total; i++)
+    else
     {
-        BPDisplayInfo info;
-        if (dbg_GetBPInfo(i, &info))
+        for (int i = 0; i < total; i++)
         {
-            CString tempLine;
-            tempLine.Format(_T(" BP Id:[%d] => Target ADDR: [ 0x%08X ] Active:%d \r\n"), i, info.address, info.active);
-            strOutput += tempLine;
+            BPDisplayInfo info;
+            if (dbg_GetBPInfo(i, &info))
+            {
+                CString tempLine;
+                tempLine.Format(_T(" BP Id:[%d] => Target ADDR: [ 0x%08X ] Active:%d \r\n"),
+                    i, info.address, info.active);
+                strOutput += tempLine;
+            }
         }
     }
 
@@ -57,7 +66,8 @@ void CBreakpointListDlg::OnBnClickedBtnDelBp()
 {
     int total = dbg_GetTotalBPCount();
 
-    for (int i = total - 1; i >= 0; --i)
+    // 倒序删除，防止因索引变化导致的越界或漏删
+    for (int i = total - 1; i >= 0; i--)
     {
         BPDisplayInfo info;
         if (dbg_GetBPInfo(i, &info))
@@ -74,9 +84,4 @@ void CBreakpointListDlg::OnBnClickedBtnDelBp()
     }
 
     RefreshBreakpoints();
-
-    if (GetParent() != NULL)
-    {
-        GetParent()->Invalidate();
-    }
 }

@@ -1,28 +1,40 @@
 #include "CThreadManager.h"
+#include <algorithm> // 引入标准算法库
 
-CThreadManager::CThreadManager() {}
-CThreadManager::~CThreadManager() { Clear(); }
-
-void CThreadManager::AddThread(DWORD dwThreadId) {
-    for (size_t i = 0; i < m_ThreadList.size(); i++) {
-        if (m_ThreadList[i] == dwThreadId) return;
-    }
-    m_ThreadList.push_back(dwThreadId);
+CThreadManager::CThreadManager()
+{
 }
 
-void CThreadManager::RemoveThread(DWORD dwThreadId) {
-    for (auto it = m_ThreadList.begin(); it != m_ThreadList.end(); ++it) {
-        if (*it == dwThreadId) {
-            m_ThreadList.erase(it);
-            break;
-        }
+CThreadManager::~CThreadManager()
+{
+    Clear();
+}
+
+void CThreadManager::AddThread(DWORD dwThreadId)
+{
+    // 使用 std::find 替代手动循环，提升代码可读性与规范性
+    if (std::find(m_ThreadList.begin(), m_ThreadList.end(), dwThreadId) == m_ThreadList.end())
+    {
+        m_ThreadList.push_back(dwThreadId);
     }
 }
 
-const std::vector<DWORD>& CThreadManager::GetThreads() const {
+void CThreadManager::RemoveThread(DWORD dwThreadId)
+{
+    // 使用迭代器查找并安全擦除
+    auto it = std::find(m_ThreadList.begin(), m_ThreadList.end(), dwThreadId);
+    if (it != m_ThreadList.end())
+    {
+        m_ThreadList.erase(it);
+    }
+}
+
+const std::vector<DWORD>& CThreadManager::GetThreads() const
+{
     return m_ThreadList;
 }
 
-void CThreadManager::Clear() {
+void CThreadManager::Clear()
+{
     m_ThreadList.clear();
 }

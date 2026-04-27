@@ -8,8 +8,8 @@
 #pragma comment(lib, "psapi.lib")
 
 CMyDebug g_Debugger;
-DEBUG_EVENT_CALLBACK g_UICallback = NULL;
-HANDLE g_hResumeEvent = NULL;
+DEBUG_EVENT_CALLBACK g_UICallback = nullptr;
+HANDLE g_hResumeEvent = nullptr;
 wchar_t g_TargetPath[MAX_PATH] = { 0 };
 DWORD g_TargetPID = 0;
 
@@ -23,7 +23,7 @@ void __stdcall EnginePausedCallback(int eventType, DWORD dwThreadId)
         g_UICallback(eventType, dwThreadId);
     }
 
-    if (eventType != DBG_EVENT_EXITED)
+    if (eventType != DBG_EVENT_EXITED && g_hResumeEvent)
     {
         WaitForSingleObject(g_hResumeEvent, INFINITE);
     }
@@ -56,13 +56,19 @@ DBG_API bool dbg_Start(const wchar_t* targetPath, DEBUG_EVENT_CALLBACK cb)
     g_TargetPID = 0;
     wcscpy_s(g_TargetPath, MAX_PATH, targetPath);
 
-    if (g_hResumeEvent == NULL)
+    if (g_hResumeEvent == nullptr)
     {
-        g_hResumeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        g_hResumeEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     }
 
-    _beginthreadex(NULL, 0, DebuggerThread, NULL, 0, NULL);
-    return true;
+    // 修复：关闭线程句柄，防止资源泄漏
+    HANDLE hThread = (HANDLE)_beginthreadex(nullptr, 0, DebuggerThread, nullptr, 0, nullptr);
+    if (hThread)
+    {
+        CloseHandle(hThread);
+        return true;
+    }
+    return false;
 }
 
 DBG_API bool dbg_Attach(DWORD targetPID, DEBUG_EVENT_CALLBACK cb)
@@ -71,48 +77,58 @@ DBG_API bool dbg_Attach(DWORD targetPID, DEBUG_EVENT_CALLBACK cb)
     g_TargetPID = targetPID;
     g_TargetPath[0] = L'\0';
 
-    if (g_hResumeEvent == NULL)
+    if (g_hResumeEvent == nullptr)
     {
-        g_hResumeEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        g_hResumeEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     }
 
-    _beginthreadex(NULL, 0, DebuggerThread, NULL, 0, NULL);
-    return true;
+    HANDLE hThread = (HANDLE)_beginthreadex(nullptr, 0, DebuggerThread, nullptr, 0, nullptr);
+    if (hThread)
+    {
+        CloseHandle(hThread);
+        return true;
+    }
+    return false;
 }
 
 DBG_API void dbg_Go()
 {
     g_Debugger.SetUserStepping(FALSE);
-    SetEvent(g_hResumeEvent);
+    if (g_hResumeEvent) SetEvent(g_hResumeEvent);
 }
 
 DBG_API void dbg_StepInto()
 {
     g_Debugger.SetUserStepping(TRUE);
     g_Debugger.SetStep();
-    SetEvent(g_hResumeEvent);
+    if (g_hResumeEvent) SetEvent(g_hResumeEvent);
 }
 
 DBG_API void dbg_StepOver()
 {
     g_Debugger.SetUserStepping(TRUE);
     g_Debugger.SetStepOver();
-    SetEvent(g_hResumeEvent);
+    if (g_hResumeEvent) SetEvent(g_hResumeEvent);
 }
 
 DBG_API void dbg_Pause()
 {
-    if (g_Debugger.GetProcessHandle())
+    HANDLE hProcess = g_Debugger.GetProcessHandle();
+    if (hProcess)
     {
-        DebugBreakProcess(g_Debugger.GetProcessHandle());
+        DebugBreakProcess(hProcess);
     }
 }
 
 DBG_API void dbg_Stop()
 {
-    if (g_Debugger.GetProcessHandle())
+    HANDLE hProcess = g_Debugger.GetProcessHandle();
+    if (hProcess)
     {
-        TerminateProcess(g_Debugger.GetProcessHandle(), 0);
+        TerminateProcess(hProcess, 0);
+    }
+    if (g_hResumeEvent)
+    {
         SetEvent(g_hResumeEvent);
     }
 }
@@ -120,6 +136,12 @@ DBG_API void dbg_Stop()
 DBG_API void dbg_Restart()
 {
     dbg_Stop();
+    Sleep(200);
+
+    if (wcslen(g_TargetPath) > 0)
+    {
+        dbg_Start(g_TargetPath, g_UICallback);
+    }
 }
 
 DBG_API void dbg_RunToCursor(DWORD addr)
@@ -130,24 +152,52 @@ DBG_API void dbg_RunToCursor(DWORD addr)
 
 DBG_API void dbg_RunToReturn()
 {
+    RegInfo regs;
+    if (dbg_GetRegs(g_Debugger.GetCurrentThreadId(), &regs))
+    {
+        DWORD retAddr = 0;
+        if (dbg_ReadMemory(regs.esp, &retAddr, 4) && retAddr != 0)
+        {
+            g_Debugger.SetTempBreakpoint(retAddr);
+            dbg_Go();
+        }
+    }
 }
 
 DBG_API void dbg_RunToUserCode()
 {
+    DWORD dwBase = g_Debugger.GetUserImageBase();
+    DWORD dwSize = g_Debugger.GetUserImageSize();
+
+    if (dwBase == 0) dwBase = 0x00400000;
+    if (dwSize == 0) dwSize = 0x00C00000;
+
+    RegInfo regs;
+    if (dbg_GetRegs(g_Debugger.GetCurrentThreadId(), &regs))
+    {
+        DWORD stackData[1024] = { 0 };
+        if (dbg_ReadMemory(regs.esp, stackData, sizeof(stackData)))
+        {
+            for (int i = 0; i < 1024; i++)
+            {
+                DWORD ptr = stackData[i];
+                if (ptr > dwBase && ptr < (dwBase + dwSize))
+                {
+                    g_Debugger.SetTempBreakpoint(ptr);
+                    dbg_Go();
+                    return;
+                }
+            }
+        }
+    }
 }
 
 DBG_API bool dbg_GetRegs(DWORD dwThreadId, RegInfo* outRegInfo)
 {
-    if (!outRegInfo)
-    {
-        return false;
-    }
+    if (!outRegInfo) return false;
 
     HANDLE hThread = OpenThread(THREAD_GET_CONTEXT, FALSE, dwThreadId);
-    if (!hThread)
-    {
-        return false;
-    }
+    if (!hThread) return false;
 
     CONTEXT ctx = { 0 };
     ctx.ContextFlags = CONTEXT_FULL;
@@ -176,36 +226,23 @@ DBG_API bool dbg_GetRegs(DWORD dwThreadId, RegInfo* outRegInfo)
 DBG_API bool dbg_SetRegister(DWORD dwThreadId, const char* regName, DWORD value)
 {
     HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, dwThreadId);
-    if (!hThread)
-    {
-        return false;
-    }
+    if (!hThread) return false;
 
     CONTEXT ctx = { 0 };
     ctx.ContextFlags = CONTEXT_FULL;
 
     if (GetThreadContext(hThread, &ctx))
     {
-        if (_stricmp(regName, "EAX") == 0)
-            ctx.Eax = value;
-        else if (_stricmp(regName, "EBX") == 0)
-            ctx.Ebx = value;
-        else if (_stricmp(regName, "ECX") == 0)
-            ctx.Ecx = value;
-        else if (_stricmp(regName, "EDX") == 0)
-            ctx.Edx = value;
-        else if (_stricmp(regName, "ESI") == 0)
-            ctx.Esi = value;
-        else if (_stricmp(regName, "EDI") == 0)
-            ctx.Edi = value;
-        else if (_stricmp(regName, "EBP") == 0)
-            ctx.Ebp = value;
-        else if (_stricmp(regName, "ESP") == 0)
-            ctx.Esp = value;
-        else if (_stricmp(regName, "EIP") == 0)
-            ctx.Eip = value;
-        else if (_stricmp(regName, "EFL") == 0)
-            ctx.EFlags = value;
+        if (_stricmp(regName, "EAX") == 0) ctx.Eax = value;
+        else if (_stricmp(regName, "EBX") == 0) ctx.Ebx = value;
+        else if (_stricmp(regName, "ECX") == 0) ctx.Ecx = value;
+        else if (_stricmp(regName, "EDX") == 0) ctx.Edx = value;
+        else if (_stricmp(regName, "ESI") == 0) ctx.Esi = value;
+        else if (_stricmp(regName, "EDI") == 0) ctx.Edi = value;
+        else if (_stricmp(regName, "EBP") == 0) ctx.Ebp = value;
+        else if (_stricmp(regName, "ESP") == 0) ctx.Esp = value;
+        else if (_stricmp(regName, "EIP") == 0) ctx.Eip = value;
+        else if (_stricmp(regName, "EFL") == 0) ctx.EFlags = value;
         else
         {
             CloseHandle(hThread);
@@ -306,7 +343,8 @@ DBG_API bool dbg_GetBPInfo(int index, BPDisplayInfo* outInfo)
 DBG_API bool dbg_ReadMemory(DWORD address, void* buffer, SIZE_T size)
 {
     SIZE_T bytesRead = 0;
-    if (ReadProcessMemory(g_Debugger.GetProcessHandle(), (LPCVOID)address, buffer, size, &bytesRead))
+    HANDLE hProcess = g_Debugger.GetProcessHandle();
+    if (hProcess && ReadProcessMemory(hProcess, (LPCVOID)address, buffer, size, &bytesRead))
     {
         return bytesRead > 0;
     }
@@ -439,8 +477,8 @@ DBG_API void dbg_UpdateCallStack(DWORD threadId)
         DWORD retAddr = 0;
         DWORD nextEbp = 0;
 
-        if (!ReadProcessMemory(hProc, (LPCVOID)(currentEbp + 4), &retAddr, 4, NULL)) break;
-        if (!ReadProcessMemory(hProc, (LPCVOID)currentEbp, &nextEbp, 4, NULL)) break;
+        if (!ReadProcessMemory(hProc, (LPCVOID)(currentEbp + 4), &retAddr, 4, nullptr)) break;
+        if (!ReadProcessMemory(hProc, (LPCVOID)currentEbp, &nextEbp, 4, nullptr)) break;
 
         item.retTo = retAddr;
 
@@ -480,12 +518,8 @@ DBG_API bool dbg_GetCallStackItem(int index, CallStackItem* outItem)
     return true;
 }
 
-// =========================================================================
-// 核心：智能 API 地址解析引擎
-// =========================================================================
 DBG_API DWORD dbg_ResolveApiAddress(const char* apiName)
 {
-    // 定义常见的系统核心模块列表
     const char* commonModules[] = {
         "ntdll.dll",
         "kernel32.dll",
@@ -501,7 +535,6 @@ DBG_API DWORD dbg_ResolveApiAddress(const char* apiName)
 
     for (int i = 0; i < moduleCount; i++)
     {
-        // 尝试获取模块句柄，如果没有加载则强制加载
         HMODULE hMod = GetModuleHandleA(commonModules[i]);
         if (!hMod)
         {
@@ -510,33 +543,20 @@ DBG_API DWORD dbg_ResolveApiAddress(const char* apiName)
 
         if (hMod)
         {
-            // 尝试查找函数名
             FARPROC proc = GetProcAddress(hMod, apiName);
-            if (proc)
-            {
-                return (DWORD)proc;
-            }
+            if (proc) return (DWORD)proc;
 
-            // 很多系统函数分 ANSI 和 Unicode 版本 (如 MessageBoxA / MessageBoxW)
-            // 如果用户只输入了 MessageBox，我们自动帮他尝试加 A 和 W 后缀
             char apiNameA[128] = { 0 };
             sprintf_s(apiNameA, sizeof(apiNameA), "%sA", apiName);
             proc = GetProcAddress(hMod, apiNameA);
-            if (proc)
-            {
-                return (DWORD)proc;
-            }
+            if (proc) return (DWORD)proc;
 
             char apiNameW[128] = { 0 };
             sprintf_s(apiNameW, sizeof(apiNameW), "%sW", apiName);
             proc = GetProcAddress(hMod, apiNameW);
-            if (proc)
-            {
-                return (DWORD)proc;
-            }
+            if (proc) return (DWORD)proc;
         }
     }
 
-    // 如果所有的常用模块里都找不到，返回 0
     return 0;
 }

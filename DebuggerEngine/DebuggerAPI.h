@@ -56,6 +56,7 @@ struct BPDisplayInfo
     bool active;
 };
 
+// ==== 调试控制 API ====
 DBG_API bool dbg_Start(const wchar_t* targetPath, DEBUG_EVENT_CALLBACK cb);
 DBG_API bool dbg_Attach(DWORD targetPID, DEBUG_EVENT_CALLBACK cb);
 
@@ -69,11 +70,13 @@ DBG_API void dbg_RunToCursor(DWORD addr);
 DBG_API void dbg_RunToReturn();
 DBG_API void dbg_RunToUserCode();
 
+// ==== 状态读取与设置 API ====
 DBG_API bool dbg_GetRegs(DWORD dwThreadId, RegInfo* outRegInfo);
 DBG_API bool dbg_SetRegister(DWORD dwThreadId, const char* regName, DWORD value);
 DBG_API bool dbg_ReadMemory(DWORD address, void* buffer, SIZE_T size);
 DBG_API void dbg_EnsureDisasm(DWORD addr);
 
+// ==== 反汇编 API ====
 DBG_API int dbg_GetGlobalDisasmCount();
 DBG_API bool dbg_GetGlobalDisasmItem(int index, InstrInfo* outInfo);
 DBG_API int dbg_FindDisasmIndexByAddr(DWORD addr);
@@ -92,6 +95,7 @@ DBG_API bool dbg_HasHardwareBreakpoint(DWORD address);
 DBG_API int dbg_GetTotalBPCount();
 DBG_API bool dbg_GetBPInfo(int index, BPDisplayInfo* outInfo);
 
+// ==== 内存与堆栈 API ====
 DBG_API void dbg_UpdateMemoryMap();
 DBG_API int dbg_GetMemoryMapCount();
 DBG_API bool dbg_GetMemoryMapItem(int index, MemMapItem* outItem);
@@ -100,4 +104,5 @@ DBG_API void dbg_UpdateCallStack(DWORD threadId);
 DBG_API int dbg_GetCallStackCount();
 DBG_API bool dbg_GetCallStackItem(int index, CallStackItem* outItem);
 
+// ==== 辅助 API ====
 DBG_API DWORD dbg_ResolveApiAddress(const char* apiName);
