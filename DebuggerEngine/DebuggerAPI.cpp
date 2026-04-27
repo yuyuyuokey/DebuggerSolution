@@ -517,7 +517,7 @@ DBG_API DWORD dbg_ResolveApiAddress(const char* apiName)
                 return (DWORD)proc;
             }
 
-            // 黑科技：很多系统函数分 ANSI 和 Unicode 版本 (如 MessageBoxA / MessageBoxW)
+            // 很多系统函数分 ANSI 和 Unicode 版本 (如 MessageBoxA / MessageBoxW)
             // 如果用户只输入了 MessageBox，我们自动帮他尝试加 A 和 W 后缀
             char apiNameA[128] = { 0 };
             sprintf_s(apiNameA, sizeof(apiNameA), "%sA", apiName);

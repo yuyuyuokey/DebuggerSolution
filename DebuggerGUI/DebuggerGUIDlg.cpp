@@ -6,12 +6,100 @@
 #include "DebuggerAPI.h"
 #include "CEditRegDlg.h"
 #include "CProcessListDlg.h"
+#include "CAIResultDlg.h"
+
+// ===== AI 辅助功能所需头文件 =====
+#include "httplib.h"
+#include "json.hpp"
+#include <thread>
+// 引入 Windows 网络底层库，httplib 必须依赖它
+#pragma comment(lib, "ws2_32.lib") 
+
+using json = nlohmann::json;
+// =================================
 
 HWND g_hMainWnd = NULL;
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
+
+// ===== Ollama 网络通信核心函数 =====
+std::string AskOllamaForHelp(const std::string& prompt_text)
+{
+	// Use raw IP to avoid DNS issues with proxies
+	httplib::Client cli("127.0.0.1", 11434);
+	cli.set_read_timeout(300, 0);
+	cli.set_connection_timeout(10, 0);
+
+	json req_body;
+	req_body["model"] = "qwen2.5-coder:7b";
+	req_body["prompt"] = prompt_text;
+	req_body["stream"] = false;
+
+	std::string json_str = req_body.dump();
+	auto res = cli.Post("/api/generate", json_str, "application/json");
+
+	if (res && res->status == 200) {
+		try {
+			json res_body = json::parse(res->body);
+			return res_body["response"].get<std::string>();
+		}
+		catch (...) {
+			return "Error: JSON parse failed.";
+		}
+	}
+
+	if (res) return "Error: HTTP " + std::to_string(res->status);
+	return "Error: Connection failed. Check if Ollama is running and Proxy is OFF.";
+}
+// ===================================
+
+struct AIThreadParams {
+	HWND hWnd;
+	CString promptCode;
+};
+
+UINT __cdecl AIAnalyzeThread(LPVOID pParam)
+{
+	AIThreadParams* pParams = (AIThreadParams*)pParam;
+	if (!pParams) return 1;
+
+	// 1. 【核心修改】用宽字符定义中文提示词，防止源码编码干扰
+	CStringW strPromptW = L"你是一个专业的逆向工程师。请用【中文】详细解释以下 x86 汇编代码的功能和逻辑：\n\n";
+
+	// 2. 把选中的汇编代码（原本是宽字符）拼接到提示词后面
+	strPromptW += (CStringW)pParams->promptCode;
+
+	// 3. 将完整的宽字符提示词一次性转为 UTF-8 std::string
+	std::string finalPromptUtf8;
+	int nLen = ::WideCharToMultiByte(CP_UTF8, 0, strPromptW, -1, NULL, 0, NULL, NULL);
+	if (nLen > 0) {
+		finalPromptUtf8.resize(nLen - 1);
+		::WideCharToMultiByte(CP_UTF8, 0, strPromptW, -1, &finalPromptUtf8[0], nLen - 1, NULL, NULL);
+	}
+
+	std::string answer_utf8;
+	try {
+		// 这里不再抛出异常，因为 finalPromptUtf8 是标准的 UTF-8
+		answer_utf8 = AskOllamaForHelp(finalPromptUtf8);
+	}
+	catch (...) {
+		answer_utf8 = "Error: LLM Request Exception. Check if Ollama model is loaded.";
+	}
+
+	// 4. 将 AI 返回的结果转回宽字符给界面显示
+	int wideLen = MultiByteToWideChar(CP_UTF8, 0, answer_utf8.c_str(), -1, NULL, 0);
+	CString* pFinalAnswer = new CString();
+	MultiByteToWideChar(CP_UTF8, 0, answer_utf8.c_str(), -1, pFinalAnswer->GetBuffer(wideLen), wideLen);
+	pFinalAnswer->ReleaseBuffer();
+
+	::PostMessage(pParams->hWnd, WM_AI_ANALYZE_DONE, (WPARAM)pFinalAnswer, 0);
+
+	delete pParams;
+	return 0;
+}
+
 
 void __stdcall MyDebuggerCallback(int eventType, DWORD dwThreadId)
 {
@@ -81,7 +169,7 @@ BOOL CDebuggerGUIDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);
 	g_hMainWnd = this->GetSafeHwnd();
 
-	SetWindowText(_T("Debugger_Gemini - x86 Reverse Engine Framework : [Idle]"));
+	SetWindowText(_T("Debugger - x86 Reverse Engine Framework : [Idle]"));
 
 	if (m_tabMain.GetSafeHwnd())
 	{
@@ -95,7 +183,7 @@ BOOL CDebuggerGUIDlg::OnInitDialog()
 	if (pListDisasm)
 	{
 		pListDisasm->SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_HEADERDRAGDROP);
-		pListDisasm->InsertColumn(0, _T("地址"), LVCFMT_LEFT, 110);
+		pListDisasm->InsertColumn(0, _T("地址"), LVCFMT_LEFT, 150);
 		pListDisasm->InsertColumn(1, _T("机器码"), LVCFMT_LEFT, 160);
 		pListDisasm->InsertColumn(2, _T("汇编指令"), LVCFMT_LEFT, 250);
 		pListDisasm->InsertColumn(3, _T("注释"), LVCFMT_LEFT, 350);
@@ -439,7 +527,7 @@ void CDebuggerGUIDlg::OnFileOpen()
 		if (bRet)
 		{
 			CString strTitle;
-			strTitle.Format(_T("Debugger_Gemini - [调试中]: %s"), fileDlg.GetFileTitle());
+			strTitle.Format(_T("Debugger - [调试中]: %s"), fileDlg.GetFileTitle());
 			SetWindowText(strTitle);
 		}
 		else
@@ -818,6 +906,9 @@ void CDebuggerGUIDlg::OnNMRClickListDisasm(NMHDR* pNMHDR, LRESULT* pResult)
 	{
 		menu.AppendMenu(MF_STRING, 1001, _T("设置 软件断点 (F2)"));
 	}
+	// 添加一条分割线和 AI 分析菜单项
+	menu.AppendMenu(MF_SEPARATOR);
+	menu.AppendMenu(MF_STRING, 1004, _T("🤖 AI 智能分析该指令"));
 
 	menu.AppendMenu(MF_SEPARATOR);
 
@@ -854,9 +945,35 @@ void CDebuggerGUIDlg::OnNMRClickListDisasm(NMHDR* pNMHDR, LRESULT* pResult)
 	{
 		dbg_RemoveHardwareBreakpoint(info.address);
 	}
+	else if (cmd == 1004)
+	{
+		CListCtrl* pList = (CListCtrl*)GetDlgItem(IDC_LIST_DISASM);
+		if (!pList) return;
 
-	pList->Invalidate();
-	RefreshBreakpointsTab();
+		// 1. 提取文本
+		CString strAllAsm;
+		POSITION pos = pList->GetFirstSelectedItemPosition();
+		while (pos)
+		{
+			int nItem = pList->GetNextSelectedItem(pos);
+			InstrInfo tempInfo;
+			if (dbg_GetGlobalDisasmItem(nItem, &tempInfo))
+			{
+				strAllAsm += tempInfo.assembly;
+				strAllAsm += _T("\r\n");
+			}
+		}
+
+		if (strAllAsm.IsEmpty()) return;
+
+		// 2. 弹窗（这里不要加任何线程，线程已经移到 CAIResultDlg 内部了）
+		CAIResultDlg dlg;
+		dlg.m_strAsmCode = strAllAsm; // 👈 变量名确保正确
+		INT_PTR nRes = dlg.DoModal();
+
+		// 调试用：如果还是不弹窗，取消下面一行的注释，看看弹出的数字是多少
+		// if (nRes == -1) AfxMessageBox(_T("对话框创建失败，请检查 RichEdit 初始化或 IDD 设置"));
+	}
 }
 
 void CDebuggerGUIDlg::OnCustomDrawListDisasm(NMHDR* pNMHDR, LRESULT* pResult)
@@ -1176,77 +1293,60 @@ void CDebuggerGUIDlg::OnSize(UINT nType, int cx, int cy)
 	CWnd* pDisasm = GetDlgItem(IDC_LIST_DISASM);
 	if (!pDisasm || !pDisasm->GetSafeHwnd()) return;
 
-	if (m_nSplitterX == 0) m_nSplitterX = cx - 350;
-	if (m_nSplitterY == 0) m_nSplitterY = (cy) * 2 / 3;
+	// 1. 设置初始比例（第一次运行时使用百分比，确保最大化后比例正常）
+	if (m_nSplitterX == 0) m_nSplitterX = (int)(cx * 0.75);
+	if (m_nSplitterY == 0) m_nSplitterY = (int)(cy * 0.65);
 
-	if (m_nSplitterX < 150) m_nSplitterX = 150;
-	if (m_nSplitterX > cx - 150) m_nSplitterX = cx - 150;
-	if (m_nSplitterY < 100) m_nSplitterY = 100;
-	if (m_nSplitterY > cy - 100) m_nSplitterY = cy - 100;
+	// 2. 布局参数配置
+	int sp = 4;             // 控件间的缝隙
+	int cmdAreaHeight = 28; // 命令行区域的高度
+	int bottomGap = 8;      // 距离窗口最底部的留白
+	int labelWidth = 70;    // 增加标签宽度，防止遮挡“Command:”
+	int leftMargin = 10;    // 左边距
 
-	int sp = 3;
-	int cmdHeight = 25;
+	// 3. 计算各个区域的尺寸
+	// 底部控件的起始 Y 坐标
+	int cmdY = cy - cmdAreaHeight - bottomGap;
 
+	// 4. 调整上方四个主要窗口（减去底部命令行占用的空间）
 	if (m_tabMain.GetSafeHwnd())
 	{
 		m_tabMain.MoveWindow(5, 5, m_nSplitterX - 5 - sp, m_nSplitterY - 5 - sp);
 	}
 
+	// 反汇编列表随 Tab 缩放
 	CRect rectTab;
-	if (m_tabMain.GetSafeHwnd())
-	{
-		m_tabMain.GetWindowRect(&rectTab);
-		ScreenToClient(&rectTab);
-		m_tabMain.AdjustRect(FALSE, &rectTab);
-	}
-	else
-	{
-		rectTab.SetRect(5, 5, m_nSplitterX - 5 - sp, m_nSplitterY - 5 - sp);
-	}
-
+	m_tabMain.GetWindowRect(&rectTab);
+	ScreenToClient(&rectTab);
+	m_tabMain.AdjustRect(FALSE, &rectTab);
 	pDisasm->MoveWindow(rectTab);
+	if (m_listBreakpoints.GetSafeHwnd()) m_listBreakpoints.MoveWindow(rectTab);
+	if (m_listMemMap.GetSafeHwnd()) m_listMemMap.MoveWindow(rectTab);
+	if (m_listCallStack.GetSafeHwnd()) m_listCallStack.MoveWindow(rectTab);
 
-	if (m_listBreakpoints.GetSafeHwnd())
-	{
-		m_listBreakpoints.MoveWindow(rectTab);
-	}
-	if (m_listMemMap.GetSafeHwnd())
-	{
-		m_listMemMap.MoveWindow(rectTab);
-	}
-	if (m_listCallStack.GetSafeHwnd())
-	{
-		m_listCallStack.MoveWindow(rectTab);
-	}
-
-	CWnd* pMemory = GetDlgItem(IDC_LIST_MEMORY);
-	if (pMemory)
-	{
-		pMemory->MoveWindow(5, m_nSplitterY + sp, m_nSplitterX - 5 - sp, cy - m_nSplitterY - sp - 5 - cmdHeight);
-	}
-
+	// 寄存器窗口
 	CWnd* pRegs = GetDlgItem(IDC_LIST_REGS);
-	if (pRegs)
-	{
-		pRegs->MoveWindow(m_nSplitterX + sp, 5, cx - m_nSplitterX - sp - 5, m_nSplitterY - 5 - sp);
-	}
+	if (pRegs) pRegs->MoveWindow(m_nSplitterX + sp, 5, cx - m_nSplitterX - sp - 5, m_nSplitterY - 5 - sp);
 
+	// 内存窗口（高度计算要减去底部的 cmdAreaHeight）
+	CWnd* pMemory = GetDlgItem(IDC_LIST_MEMORY);
+	if (pMemory) pMemory->MoveWindow(5, m_nSplitterY + sp, m_nSplitterX - 5 - sp, cmdY - m_nSplitterY - (sp * 2));
+
+	// 堆栈窗口
 	CWnd* pStack = GetDlgItem(IDC_LIST_STACK);
-	if (pStack)
-	{
-		pStack->MoveWindow(m_nSplitterX + sp, m_nSplitterY + sp, cx - m_nSplitterX - sp - 5, cy - m_nSplitterY - sp - 5 - cmdHeight);
-	}
+	if (pStack) pStack->MoveWindow(m_nSplitterX + sp, m_nSplitterY + sp, cx - m_nSplitterX - sp - 5, cmdY - m_nSplitterY - (sp * 2));
 
-	CWnd* pCmdText = GetDlgItem(IDC_STATIC);
+	// 5. 调整底部命令行（使用新 ID）
+	CWnd* pCmdText = GetDlgItem(IDC_STATIC_CMD_LABEL); // 使用刚刚修改的新 ID
 	CWnd* pCmdEdit = GetDlgItem(IDC_EDIT_COMMAND);
 
-	if (pCmdEdit)
+	if (pCmdEdit && pCmdEdit->GetSafeHwnd())
 	{
-		if (pCmdText)
+		if (pCmdText && pCmdText->GetSafeHwnd())
 		{
-			pCmdText->MoveWindow(10, cy - cmdHeight, 35, cmdHeight - 5);
+			pCmdText->MoveWindow(leftMargin, cmdY + 4, labelWidth, cmdAreaHeight);
 		}
-		pCmdEdit->MoveWindow(45, cy - cmdHeight, cx - 55, cmdHeight - 5);
+		pCmdEdit->MoveWindow(leftMargin + labelWidth, cmdY, cx - (leftMargin + labelWidth + 15), cmdAreaHeight);
 	}
 }
 

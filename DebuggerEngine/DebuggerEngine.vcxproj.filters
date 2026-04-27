@@ -18,9 +18,6 @@
     <ClInclude Include="DebuggerAPI.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="CThreadManager.h">
-      <Filter>源文件</Filter>
-    </ClInclude>
     <ClInclude Include="CBreakpointManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -31,6 +28,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Zydis.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CThreadManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

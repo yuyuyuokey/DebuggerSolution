@@ -8,6 +8,7 @@
 #define IDD_DLG_EDIT_REG                130
 #define IDD_DLG_PROCLIST                132
 #define IDR_MAIN_MENU                   134
+#define IDD_DIALOG_AI_RESULT            137
 #define IDC_BUTTON1                     1000
 #define IDC_BTN_START                   1000
 #define IDC_BUTTON2                     1001
@@ -27,8 +28,10 @@
 #define IDC_LIST_MEMORY                 1015
 #define IDC_LIST_PROCS                  1016
 #define IDC_EDIT_COMMAND                1017
-#define IDC_TAB1                        1018
 #define IDC_TAB_MAIN                    1018
+#define IDC_STATIC_CMD_LABEL            1019
+#define IDC_RICHEDIT21                  1022
+#define IDC_RICHEDIT_AI                 1022
 #define ID_32771                        32771
 #define ID_32772                        32772
 #define ID_FILE_ATTACH                  32773
@@ -65,9 +68,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        137
+#define _APS_NEXT_RESOURCE_VALUE        139
 #define _APS_NEXT_COMMAND_VALUE         32802
-#define _APS_NEXT_CONTROL_VALUE         1019
+#define _APS_NEXT_CONTROL_VALUE         1023
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

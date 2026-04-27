@@ -42,6 +42,15 @@
     <ClInclude Include="CBreakpointListDlg.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="httplib.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="json.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CAIResultDlg.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DebuggerGUI.cpp">
@@ -60,6 +69,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="CBreakpointListDlg.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CAIResultDlg.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

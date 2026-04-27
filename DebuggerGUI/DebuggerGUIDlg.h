@@ -1,5 +1,6 @@
 ﻿#pragma once
 #define WM_DEBUG_EVENT (WM_USER + 100)
+#define WM_AI_ANALYZE_DONE (WM_USER + 101)
 #include "resource.h"
 
 #define TAB_CPU 0
@@ -88,7 +89,6 @@ public:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
-
 	afx_msg void OnTcnSelchangeTabMain(NMHDR* pNMHDR, LRESULT* pResult);
 
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
